@@ -22,3 +22,6 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
 }
 tasks.named('test') { useJUnitPlatform() }
+
+// 컨테이너/CI가 집는 jar 경로를 고정한다 — 버전 문자열/plain jar 변동 차단.
+tasks.named('bootJar') { archiveFileName = 'app.jar' }
