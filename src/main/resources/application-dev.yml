@@ -1,0 +1,5 @@
+# dev 프로필 — 도커 풀스택과 나란히 실행하는 로컬 개발 클러스터.
+# 포트 = 기본 + 10000 (도커가 호스트에 공개한 포트와 충돌 회피).
+# SPRING_PROFILES_ACTIVE=dev 로 활성화 (.run/bootRun (dev)).
+server:
+  port: 18761
