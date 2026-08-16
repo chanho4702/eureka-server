@@ -3,7 +3,7 @@
 MSA_TEMPLATE의 **서비스 레지스트리(Service Registry)**.
 "어떤 서비스가 지금 어디(IP:포트)에 살아 있는가"의 단일 장부를 유지하고, 게이트웨이의 `lb://` 라우팅이 이 장부를 바라본다.
 
-> 별도 git repo: `github.com/chanho4702/eureka-server`. 우산 repo(MSA_TEMPLATE)에서는 gitignore 됨.
+> 별도 git repo: [chanho4702/eureka-server](https://github.com/chanho4702/eureka-server). 전체 구성은 [infra-settings](https://github.com/chanho4702/infra-settings) 참고.
 
 ---
 
@@ -21,10 +21,10 @@ MSA_TEMPLATE의 **서비스 레지스트리(Service Registry)**.
 ## 동작 원리 — 3가지 축
 
 ```
-  auth-server(:9000) ──자기등록+하트비트(30s)──▶ ┌────────────────────┐
-  board-service      ──자기등록+하트비트(30s)──▶ │ eureka-server:8761 │
-                                                │  (인스턴스 장부)     │
-  gateway-server ◀──레지스트리 조회+로컬캐시──── └────────────────────┘
+  auth·board·gateway ──자기등록+하트비트(30s)──▶ ┌────────────────────┐
+  org·wiki·alm·search ──dev에서 자기등록────────▶ │ eureka-server:8761 │
+                                                  │  (인스턴스 장부)     │
+  gateway-server ◀────레지스트리 조회+로컬캐시─── └────────────────────┘
       │
       └─▶ lb://board-service → 장부에서 인스턴스 목록 → 라운드로빈 선택 → 프록시
 ```
@@ -72,7 +72,7 @@ eureka:
 - **하트비트 주기(30s)·리스 만료(90s)·self-preservation(활성)은 전부 Eureka 기본값** — yml에 명시하지 않았다. 튜닝이 필요해지면 `eureka.instance.lease-*`, `eureka.server.enable-self-preservation`으로 오버라이드한다. self-preservation은 "짧은 시간에 하트비트 다수가 끊기면 네트워크 문제로 간주해 퇴출을 멈추는" 안전장치로, 로컬 개발에서 죽은 인스턴스가 대시보드에 남아 보이는 원인이 되기도 한다.
 - **HA(peer 복제)는 YAGNI로 미구현** — 로컬 캐시 덕에 단일 노드로도 개발·데모에 충분. 운영 전환 시점에 재검토.
 
-## 기술 스택 (실측)
+## 기술 스택
 
 | 항목 | 버전/값 | 출처 |
 |---|---|---|
@@ -105,11 +105,12 @@ http://localhost:8761
 ```
 
 - 브라우저로 열면 **Instances currently registered with Eureka** 표에 등록된 인스턴스(이름·`IP:포트`·상태 UP/DOWN)가 보인다.
-- 정상 상태라면 GATEWAY-SERVER · AUTH-SERVER · BOARD-SERVICE 3개가 UP.
+- 컨테이너 전체 스택에서는 GATEWAY-SERVER · AUTH-SERVER · BOARD-SERVICE 3개가 UP이다.
+  dev 오프셋 클러스터에서는 여기에 ORG · WIKI · ALM · SEARCH가 함께 등록된다.
 - JSON으로 긁을 때: `curl -H "Accept: application/json" http://localhost:8761/eureka/apps`
 - 하단 **General Info / Instance Info**에서 self-preservation 활성 여부, 가용 메모리 등 서버 자체 상태도 확인된다.
 
-> 포트 맵: eureka 8761 / gateway 8000 / auth 9000 / board 9100 / Keycloak 8080 / Postgres 5433.
+> 포트 맵: eureka 8761 / gateway 8000 / auth 9000 / board 9100 / wiki 9110 / alm 9120 / org 9130 / search 9140 / Keycloak 8080 / Postgres 5433.
 
 ## 환경변수
 
@@ -119,9 +120,9 @@ http://localhost:8761
 
 | 변수 | 사용처 | 기본값 |
 |---|---|---|
-| `EUREKA_URI` | 클라이언트(auth/board/gateway)의 `eureka.client.service-url.defaultZone` | `http://localhost:8761/eureka` |
+| `EUREKA_URI` | 등록·조회 클라이언트의 `eureka.client.service-url.defaultZone` | `http://localhost:8761/eureka` |
 
-컨테이너/원격 배포 시 클라이언트에 `EUREKA_URI=http://eureka-server:8761/eureka` 식으로 넣어 준다.
+Compose에서는 서비스명 기준 `EUREKA_URI=http://eureka:8761/eureka`를 주입한다.
 
 ## 클라이언트 쪽 계약 (등록하는 서비스들이 지킬 것)
 
@@ -139,10 +140,12 @@ eureka:
     prefer-ip-address: true    # 필수 — 아래 트러블슈팅 참고
 ```
 
-board-service·gateway-server도 `name`만 다를 뿐 동일한 블록이다(3개 클라이언트 전부 `prefer-ip-address: true`, `EUREKA_URI` 기본값 동일).
+각 서비스는 `name`만 다를 뿐 같은 등록 계약을 사용한다. 기본/dev 프로필에서는
+auth·board·gateway·org·wiki·alm·search가 등록한다. 컨테이너에서는 auth·board·gateway만
+Eureka를 사용하고, org·wiki·alm·search는 Docker DNS로 직결한다.
 
 - **새 서비스 추가 절차**: eureka-client 의존성 + 위 설정 + 게이트웨이에 `lb://서비스명` 라우트 한 줄. 끝.
-- **단위 테스트는 유레카 없이** 돌아야 한다 — 테스트 설정에 `eureka.client.enabled: false` (이 레포 포함 4개 프로젝트 전부 그렇게 되어 있음).
+- **단위 테스트는 유레카 없이** 돌아야 한다 — 각 서비스 테스트 설정에서 `eureka.client.enabled: false`로 끈다.
 - 게이트웨이는 `AUTH_SERVER_URI`/`BOARD_SERVICE_URI` env로 직접 URI를 주입하면 유레카 없이도 동작한다(탈출구).
 
 ## Docker
@@ -159,7 +162,7 @@ ENTRYPOINT ["java", "-jar", "app.jar"]
 
 빌드 전 반드시 jar를 먼저 만든다: `.\gradlew.bat bootJar` → `docker build`.
 
-## 트러블슈팅 (E2E 실측)
+## 트러블슈팅
 
 - **게이트웨이가 `500 UnknownHostException ... mshome.net`** → 서비스가 DNS 해석 불가능한 호스트명(Windows/Hyper-V의 `DESKTOP-xxx.mshome.net` 등)으로 등록된 것. 등록하는 서비스에 `eureka.instance.prefer-ip-address: true` 확인. **유레카 도입 시 필수 체크리스트** — 컨테이너/VM/Windows 어디서든 호스트명 해석은 신뢰 불가.
 - **등록했는데 게이트웨이가 아직 503** → 전파 지연(등록 + 게이트웨이 캐시 갱신 합쳐 최대 수십 초)이 정상. 대시보드에서 UP 확인 후 잠시 대기.
