@@ -1,5 +1,11 @@
 # eureka-server
 
+[![CI](https://github.com/chanho4702/eureka-server/actions/workflows/ci.yml/badge.svg)](https://github.com/chanho4702/eureka-server/actions/workflows/ci.yml)
+![Java](https://img.shields.io/badge/Java-24-ED8B00?logo=openjdk&logoColor=white)
+![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.0.6-6DB33F?logo=springboot&logoColor=white)
+![Spring Cloud](https://img.shields.io/badge/Spring%20Cloud-2025.1.2-6DB33F)
+![Eureka](https://img.shields.io/badge/Netflix-Eureka-E50914?logo=netflix&logoColor=white)
+
 MSA_TEMPLATE의 **서비스 레지스트리(Service Registry)**.
 "어떤 서비스가 지금 어디(IP:포트)에 살아 있는가"의 단일 장부를 유지하고, 게이트웨이의 `lb://` 라우팅이 이 장부를 바라본다.
 
